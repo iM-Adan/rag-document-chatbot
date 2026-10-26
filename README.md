@@ -7,8 +7,8 @@ Built and exercised on a corpus of 750+ PDF pages.
 
 ## Features
 
-- **Robust PDF ingestion** - `pypdf` for speed, with a per-page `pdfplumber` fallback when a page yields little or no text, so no page is silently dropped.
-- **Chunking with LangChain** - recursive splitting with configurable size and overlap; page and source metadata are kept on every chunk.
+- **Robust PDF ingestion** - `pypdf` for speed, with a per-page `pdfplumber` fallback when a page yields little or no text. Pages that remain empty are reported as warnings and skipped; scanned pages may require OCR.
+- **Chunking with LangChain** - recursive splitting with configurable size and overlap; page and source metadata are kept on every chunk. Source paths are relative to the data directory, so identically named files in different folders remain distinct.
 - **MiniLM embeddings + ChromaDB** - `all-MiniLM-L6-v2` embeddings (normalized, cosine space) in a persistent Chroma collection. Ingestion is idempotent thanks to content-hash chunk IDs.
 - **Better retrieval accuracy**
   - *Multi-query retrieval*: the question is rewritten into several variants (LLM paraphrases plus a keyword-only variant).
@@ -93,6 +93,8 @@ cp .env.example .env             # optional: tweak settings
    Interactive docs are available at <http://localhost:8000/docs>.
 
 The first run downloads the embedding and LLM weights from Hugging Face; later runs use the local cache.
+
+After upgrading an existing index, rebuild it once with `--reset` so stored IDs and source metadata use relative paths for nested files.
 
 ## Quick start (Docker)
 

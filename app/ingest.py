@@ -7,7 +7,7 @@ from __future__ import annotations
 import argparse
 import logging
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 import pdfplumber
 from langchain_core.documents import Document
@@ -21,13 +21,19 @@ from app.vectorstore import get_vectorstore, reset_vectorstore
 logger = logging.getLogger("rag.ingest")
 
 
-def load_pdf(path: Path, min_chars: int = settings.min_page_chars) -> List[Document]:
+def load_pdf(
+    path: Path,
+    min_chars: int = settings.min_page_chars,
+    source: Optional[str] = None,
+) -> List[Document]:
     """Extract text page by page.
 
     pypdf is fast and used first. When a page yields too little text (layout-heavy
-    pages, tables, odd encodings), pdfplumber is used for that page only so no
-    page is silently dropped from the index.
+    pages, tables, odd encodings), pdfplumber is used for that page only. Pages
+    with no extractable text are skipped with a warning so they are not silently
+    dropped from the index.
     """
+    source = source or path.name
     reader = PdfReader(str(path))
     plumber = None
     docs: List[Document] = []
@@ -36,7 +42,8 @@ def load_pdf(path: Path, min_chars: int = settings.min_page_chars) -> List[Docum
         for idx, page in enumerate(reader.pages):
             try:
                 text = clean_text(page.extract_text() or "")
-            except Exception:  # corrupt page object
+            except Exception as exc:  # corrupt page object
+                logger.warning("pypdf failed to extract %s page %d: %s", source, idx + 1, exc)
                 text = ""
             extractor = "pypdf"
 
@@ -45,7 +52,10 @@ def load_pdf(path: Path, min_chars: int = settings.min_page_chars) -> List[Docum
                     plumber = pdfplumber.open(str(path))
                 try:
                     alt = clean_text(plumber.pages[idx].extract_text() or "")
-                except Exception:
+                except Exception as exc:
+                    logger.warning(
+                        "pdfplumber failed to extract %s page %d: %s", source, idx + 1, exc
+                    )
                     alt = ""
                 if len(alt) > len(text):
                     text, extractor = alt, "pdfplumber"
@@ -55,20 +65,32 @@ def load_pdf(path: Path, min_chars: int = settings.min_page_chars) -> List[Docum
                 docs.append(
                     Document(
                         page_content=text,
-                        metadata={"source": path.name, "page": idx + 1, "extractor": extractor},
+                        metadata={"source": source, "page": idx + 1, "extractor": extractor},
                     )
+                )
+            else:
+                logger.warning(
+                    "No text extracted from %s page %d; page skipped. "
+                    "Scanned pages may require OCR.",
+                    source,
+                    idx + 1,
                 )
     finally:
         if plumber is not None:
             plumber.close()
 
-    logger.info("%s: %d pages extracted (%d via pdfplumber fallback)", path.name, len(docs), fallback_pages)
+    logger.info("%s: %d pages extracted (%d via pdfplumber fallback)", source, len(docs), fallback_pages)
     return docs
 
 
-def load_text(path: Path) -> List[Document]:
+def load_text(path: Path, source: Optional[str] = None) -> List[Document]:
     text = clean_text(path.read_text(encoding="utf-8", errors="ignore"))
-    return [Document(page_content=text, metadata={"source": path.name, "page": 1, "extractor": "text"})] if text else []
+    return [
+        Document(
+            page_content=text,
+            metadata={"source": source or path.name, "page": 1, "extractor": "text"},
+        )
+    ] if text else []
 
 
 def load_directory(data_dir: str) -> List[Document]:
@@ -78,7 +100,12 @@ def load_directory(data_dir: str) -> List[Document]:
         raise FileNotFoundError(f"No .pdf/.txt/.md files found in '{root}'")
     docs: List[Document] = []
     for path in files:
-        docs.extend(load_pdf(path) if path.suffix.lower() == ".pdf" else load_text(path))
+        source = path.relative_to(root).as_posix()
+        docs.extend(
+            load_pdf(path, source=source)
+            if path.suffix.lower() == ".pdf"
+            else load_text(path, source=source)
+        )
     return docs
 
 
