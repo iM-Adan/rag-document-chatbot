@@ -16,9 +16,20 @@ from pypdf import PdfReader
 
 from app.config import settings
 from app.utils import clean_text, content_hash
-from app.vectorstore import get_vectorstore, reset_vectorstore
 
 logger = logging.getLogger("rag.ingest")
+
+
+def get_vectorstore():
+    from app.vectorstore import get_vectorstore as load_vectorstore
+
+    return load_vectorstore()
+
+
+def reset_vectorstore():
+    from app.vectorstore import reset_vectorstore as clear_vectorstore
+
+    return clear_vectorstore()
 
 
 def load_pdf(
