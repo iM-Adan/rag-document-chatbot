@@ -125,19 +125,34 @@ def build_index(data_dir: str = settings.data_dir, reset: bool = False, batch_si
     docs = load_directory(data_dir)
     chunks = split_documents(docs)
 
-    # Content-hash IDs make re-ingestion idempotent and drop exact duplicate chunks.
+    # Source, page, and content make IDs stable without merging distinct citations.
     unique, seen = [], set()
     for chunk in chunks:
-        key = f"{chunk.metadata['source']}:{content_hash(chunk.page_content)}"
+        key = (
+            f"{chunk.metadata['source']}:{chunk.metadata.get('page', 1)}:"
+            f"{content_hash(chunk.page_content)}"
+        )
         if key not in seen:
             seen.add(key)
             unique.append((key, chunk))
 
+    if not unique and not reset:
+        raise ValueError(
+            "No text could be indexed; refusing to remove the existing index. "
+            "Check that the input documents contain extractable text."
+        )
+
     store = reset_vectorstore() if reset else get_vectorstore()
+    existing_ids = set(store.get(include=["metadatas"])["ids"])
     for start in range(0, len(unique), batch_size):
         batch = unique[start : start + batch_size]
         store.add_documents([c for _, c in batch], ids=[k for k, _ in batch])
         logger.info("Indexed %d/%d chunks", min(start + batch_size, len(unique)), len(unique))
+
+    stale_ids = existing_ids - seen
+    if stale_ids:
+        store.delete(ids=list(stale_ids))
+        logger.info("Removed %d stale chunks from the index", len(stale_ids))
 
     logger.info("Done: %d pages -> %d chunks (%d unique)", len(docs), len(chunks), len(unique))
     return len(unique)

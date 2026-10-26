@@ -30,11 +30,27 @@ def test_deduplicate_removes_exact_and_near_duplicates():
     assert out[0] is docs[0]
 
 
+def test_deduplicate_preserves_identical_text_from_distinct_sources():
+    first = Document(page_content="shared text", metadata={"source": "first.txt", "page": 1})
+    second = Document(page_content="shared text", metadata={"source": "second.txt", "page": 1})
+
+    assert deduplicate([first, second]) == [first, second]
+
+
 def test_rrf_promotes_documents_found_by_multiple_queries():
     a, b, c = doc("alpha"), doc("bravo"), doc("charlie")
     fused = reciprocal_rank_fusion([[a, b], [c, b]])
     assert fused[0].page_content == "bravo"
     assert {d.page_content for d in fused} == {"alpha", "bravo", "charlie"}
+
+
+def test_rrf_preserves_identical_text_from_distinct_sources():
+    first = Document(page_content="shared text", metadata={"source": "first.txt", "page": 1})
+    second = Document(page_content="shared text", metadata={"source": "second.txt", "page": 1})
+
+    fused = reciprocal_rank_fusion([[first], [second]])
+
+    assert fused == [first, second]
 
 
 def test_trim_to_budget_truncates_last_document():

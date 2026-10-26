@@ -9,11 +9,11 @@ Built and exercised on a corpus of 750+ PDF pages.
 
 - **Robust PDF ingestion** - `pypdf` for speed, with a per-page `pdfplumber` fallback when a page yields little or no text. Pages that remain empty are reported as warnings and skipped; scanned pages may require OCR.
 - **Chunking with LangChain** - recursive splitting with configurable size and overlap; page and source metadata are kept on every chunk. Source paths are relative to the data directory, so identically named files in different folders remain distinct.
-- **MiniLM embeddings + ChromaDB** - `all-MiniLM-L6-v2` embeddings (normalized, cosine space) in a persistent Chroma collection. Ingestion is idempotent thanks to content-hash chunk IDs.
+- **MiniLM embeddings + ChromaDB** - `all-MiniLM-L6-v2` embeddings (normalized, cosine space) in a persistent Chroma collection. Ingestion uses source/page/content IDs and removes stale chunks after successfully adding the current corpus.
 - **Better retrieval accuracy**
   - *Multi-query retrieval*: the question is rewritten into several variants (LLM paraphrases plus a keyword-only variant).
   - *Rank fusion*: results from all variants are merged with Reciprocal Rank Fusion.
-  - *De-duplication*: exact and near-duplicate chunks are removed (token-set Jaccard).
+  - *De-duplication*: exact and near-duplicate chunks from the same source page are removed (token-set Jaccard), while identical text from other pages keeps its own citation.
   - *Context tuning*: only the top-k chunks are kept and trimmed to a character budget so the prompt fits the model.
 - **RetrievalQA (Hugging Face)** - local `google/flan-t5-base` by default; swap in any Hugging Face text2text or text-generation model through an environment variable.
 - **FastAPI endpoint** - `/ask` returns the answer together with its source documents and pages; `/health` reports index status.

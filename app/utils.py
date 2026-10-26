@@ -43,20 +43,32 @@ def jaccard(a: set, b: set) -> float:
     return len(a & b) / len(a | b)
 
 
+def _document_origin(doc) -> tuple:
+    metadata = doc.metadata
+    return metadata.get("source"), metadata.get("page")
+
+
 def deduplicate(docs: Sequence, threshold: float = 0.85) -> List:
     """Drop exact duplicates and near-duplicates (token-set Jaccard >= threshold).
 
-    Order is preserved, so the highest-ranked copy always wins.
+    Duplicate text from different source pages remains separate so citations are
+    not lost. Within one source page, order is preserved and the highest-ranked
+    copy wins.
     """
-    kept, seen_hashes, kept_tokens = [], set(), []
+    kept, seen_hashes, kept_docs, kept_tokens = [], set(), [], []
     for doc in docs:
-        digest = content_hash(doc.page_content)
+        origin = _document_origin(doc)
+        digest = (origin, content_hash(doc.page_content))
         if digest in seen_hashes:
             continue
         toks = _tokens(doc.page_content)
-        if any(jaccard(toks, other) >= threshold for other in kept_tokens):
+        if any(
+            _document_origin(other) == origin and jaccard(toks, other_tokens) >= threshold
+            for other, other_tokens in zip(kept_docs, kept_tokens)
+        ):
             continue
         seen_hashes.add(digest)
+        kept_docs.append(doc)
         kept_tokens.append(toks)
         kept.append(doc)
     return kept
@@ -68,7 +80,7 @@ def reciprocal_rank_fusion(ranked_lists: Sequence[Sequence], k: int = 60) -> Lis
     first_seen: dict = {}
     for ranked in ranked_lists:
         for rank, doc in enumerate(ranked):
-            key = content_hash(doc.page_content)
+            key = (_document_origin(doc), content_hash(doc.page_content))
             scores[key] = scores.get(key, 0.0) + 1.0 / (k + rank + 1)
             first_seen.setdefault(key, doc)
     ordered = sorted(scores, key=scores.get, reverse=True)
